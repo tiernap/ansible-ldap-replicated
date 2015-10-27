@@ -1,0 +1,72 @@
+---
+- name: install and configure slapd for some form of centralised service
+  apt: name={{item}} state=present update-cache=yes cache_valid_time=3600
+  with_items:
+    - slapd
+    - ldap-utils
+    - ldapscripts
+
+- name: register done_slapd variable
+  shell: "[ -f /etc/ldap/.done_slapd ] && echo 'done' || echo ''"
+  register: done_slapd
+
+- name: reconfigure slapd/password2
+  debconf: name='slapd' question='slapd/password2' value='{{ldap_password}}' vtype='password'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/password1
+  debconf: name='slapd' question='slapd/password1' value='{{ldap_password}}' vtype='password'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/invalid_config
+  debconf: name='slapd' question='slapd/invalid_config' value='true' vtype='boolean'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/organization
+  debconf: name='slapd' question='shared/organization' value='{{ldap_organization}}' vtype='string'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/domain
+  debconf: name='slapd' question='slapd/domain' value='{{ldap_domain}}' vtype='string'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/no_configuration
+  debconf: name='slapd' question='slapd/no_configuration' value='false' vtype='boolean'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/purgue_database
+  debconf: name='slapd' question='slapd/purge_database' value='false' vtype='boolean'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: reconfigure slapd/backend
+  debconf: name='slapd' question='slapd/backend' value='HDB' vtype='select'
+  when: done_slapd.stdout.find('done') == -1
+
+- name: load debconf configuration into ldap
+  command: dpkg-reconfigure -f noninteractive slapd
+  when: done_slapd.stdout.find('done') == -1
+
+- name: create /etc/ldap/.done_slapd
+  command: touch /etc/ldap/.done_slapd creates=/etc/ldap/.done_slapd
+
+- name: start and enable slapd server
+  service: name=slapd state=started enabled=yes
+
+- name: write /etc/ldapscripts/ldapscripts.conf
+  template: src="ldapscripts.conf.j2" dest=/etc/ldapscripts/ldapscripts.conf owner=root group=root
+
+- name: write /etc/ldapscripts/ldapscripts.passwd
+  template: src="ldapscripts.passwd.j2" dest=/etc/ldapscripts/ldapscripts.passwd owner=root group=root mode=0600
+
+- name: write /etc/ldap/schema/structure.ldif
+  template: src="structure.ldif.j2" dest=/etc/ldap/schema/structure.ldif
+
+- name: write /etc/ldap/schema/eduperson.ldif
+  template: src="eduperson.ldif.j2" dest=/etc/ldap/schema/eduperson.ldif
+
+- name: add structure to ldap
+  shell: ldapadd -w {{ldap_password}} -x -D cn=admin,{{ldap_dc}} -f /etc/ldap/schema/structure.ldif && touch /etc/ldap/.done_structure creates=/etc/ldap/.done_structure
+#  shell: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/ldap/schema/structure.ldif && touch /etc/ldap/.done_structure creates=/etc/ldap/.done_structure
+
+- name: add eduperson to ldap
+  shell: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/ldap/schema/eduperson.ldif && touch /etc/ldap/.done_eduperson creates=/etc/ldap/.done_eduperson

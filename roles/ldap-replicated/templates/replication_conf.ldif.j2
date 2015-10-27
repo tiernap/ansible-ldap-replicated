@@ -1,0 +1,49 @@
+#set server ID
+#dn: cn=config
+#changetype: modify
+#add: olcServerID
+#olcServerID: {{ldap_replicated_server_id}}
+
+#Turn on syncprov replication module
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: {1}syncprov.la
+
+#identify servers in replication cluster
+dn: cn=config
+changetype: modify
+replace: olcServerID
+olcServerID: 1 ldap://{{ groups['ldap_replicated'][0] }}/
+olcServerID: 2 ldap://{{ groups['ldap_replicated'][1] }}/
+
+dn: olcDatabase={1}hdb,cn=config
+changetype: modify
+add: olcLimits
+olcLimits: dn.exact="cn=admin,{{ ldap_dc }}" time.soft=unlimited 
+  time.hard=unlimited size.soft=unlimited size.hard=unlimited
+-
+add: olcSyncRepl
+olcSyncRepl: rid=001 provider=ldap://{{ groups['ldap_replicated'][0] }}/ binddn="cn=admin,{{ ldap_dc }}" 
+  bindmethod=simple credentials={{ ldap_password }} searchbase="{{ ldap_dc }}" 
+  type=refreshOnly interval=00:00:00:10 retry="5 5 300 5" timeout=1
+olcSyncRepl: rid=002 provider=ldap://{{ groups['ldap_replicated'][1] }}/ binddn="cn=admin,{{ ldap_dc }}" 
+  bindmethod=simple credentials={{ ldap_password }} searchbase="{{ ldap_dc }}" 
+  type=refreshOnly interval=00:00:00:10 retry="5 5 300 5" timeout=1
+-
+add: olcDbIndex
+olcDbIndex: entryUUID  eq
+-
+add: olcDbIndex
+olcDbIndex: entryCSN  eq
+-
+add: olcMirrorMode
+olcMirrorMode: TRUE
+
+
+dn: olcOverlay=syncprov,olcDatabase={1}hdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+

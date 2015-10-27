@@ -1,0 +1,6 @@
+---
+ldap_server: localhost
+ldap_domain: example.com
+ldap_dc: dc=example,dc=com
+ldap_organization: acme
+ldap_password: password

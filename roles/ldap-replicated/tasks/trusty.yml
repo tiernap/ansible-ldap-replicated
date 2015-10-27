@@ -1,0 +1,47 @@
+---
+# At the moment we do NOT want to run it twice.
+#
+# Will only run if no replication is setup on any of the servers.
+#
+
+# First install slapd server
+- include: slapd.yml
+
+# now configure replication
+- name: stop if ldap_replicated_server_id is not defined
+  fail: msg="Error. ldap_replicated_server_id is not defined"
+  when: ldap_replicated_server_id is not defined
+
+- name: check if replication is already setup locally
+  shell: 'ldapsearch -Q -LLL -Y EXTERNAL -H ldapi:/// -b cn=config dn | grep olcOverlay={0}syncprov,olcDatabase={1}hdb,cn=config'
+  register: check_replication
+  ignore_errors: True
+  
+- name: check if replication is already setup on my partner
+  shell: 'ldapsearch -Q -LLL -Y EXTERNAL -H ldapi:/// -b cn=config dn | grep olcOverlay={0}syncprov,olcDatabase={1}hdb,cn=config'
+  register: check_partner_replication
+  delegate_to: "{{groups.ldap_replicated[ldap_replicated_server_id %2]}}"
+  ignore_errors: True
+
+- name: show my replication status
+  debug: msg="rc:{{check_replication.rc}}"
+
+- name: show my partner replication status
+  debug: msg="rc:{{check_partner_replication.rc}}"
+
+- name: write temporary replication_conf.ldif file
+  template: src=replication_conf.ldif.j2 dest=/tmp/replication.ldif
+  when: check_replication.rc != 0 and check_partner_replication.rc != 0
+
+- name: modify backend database
+  command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/replication.ldif
+  when: check_replication.rc != 0 and check_partner_replication.rc != 0
+  
+- name: remove temporary replication.ldif file from servers
+  file: path=/tmp/replication.ldif state=absent
+  when: check_replication.rc != 0 and check_partner_replication.rc != 0
+    
+- name: restart slapd
+  service: name=slapd state=restarted
+  when: check_replication.rc != 0 and check_partner_replication.rc != 0
+

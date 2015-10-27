@@ -1,0 +1,3 @@
+[ldap_replicated]
+ldap1.internal.tld ldap_replicated_server_id=1
+ldap2.internal.tld ldap_replicated_server_id=2
